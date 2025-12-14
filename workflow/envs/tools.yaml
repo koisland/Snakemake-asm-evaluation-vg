@@ -1,0 +1,9 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - samtools
+  - seqkit
+  - minimap2
+  - pggb
+  - impg

@@ -1,0 +1,12 @@
+assemblies:
+- /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/hifiasm/CHM13_hifiasm/assembly.fasta
+- /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/verkko/CHM13_verkko/assembly.fasta
+regions: /project/logsdon_shared/projects/Keith/NucFlagPaper/exp/pggb/regions/regions_slop_5kbp.bed
+output_dir: "results"
+log_dir: "logs"
+benchmark_dir: "benchmarks"
+
+threads_mm2: 32
+mem_mm2: 100GB
+threads_pggb: 8
+mem_pggb: 30GB

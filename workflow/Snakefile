@@ -1,0 +1,151 @@
+import os
+import glob
+from os.path import join
+
+
+ASSEMBLIES = config["assemblies"]
+REGIONS = config["regions"]
+OUTPUT_DIR = config["output_dir"]
+LOG_DIR = config["log_dir"]
+BENCHMARK_DIR = config["benchmark_dir"]
+
+THREADS_MM2 = config["threads_mm2"]
+MEM_MM2 = config["mem_mm2"]
+THREADS_MG = config["threads_mg"]
+MEM_MG = config["mem_mg"]
+
+
+if isinstance(REGIONS, str) and os.path.exists(REGIONS):
+    all_regions = []
+    with open(REGIONS, "rt") as fh:
+        for line in fh:
+            chrom, st, end, *_ = line.strip().split("\t")
+            all_regions.append(f"{chrom}:{st}-{end}")
+elif isinstance(REGIONS, str):
+    all_regions = [REGIONS]
+elif isinstance(REGIONS, list):
+    all_regions = REGIONS
+
+
+rule merge_asm:
+    input:
+        asm=ASSEMBLIES,
+    output:
+        fa=join(OUTPUT_DIR, "merged_asm.fa.gz"),
+    benchmark:
+        join(BENCHMARK_DIR, "merge_asm.tsv")
+    log:
+        join(LOG_DIR, "merge_asm.log"),
+    shell:
+        """
+        {{ zcat -f {input.asm} | seqkit rmdup | bgzip ;}} > {output.fa} 2> {log}
+        samtools faidx {output.fa} 2>> {log}
+        """
+
+
+rule ava_asm:
+    input:
+        asm=rules.merge_asm.output,
+    output:
+        paf=join(OUTPUT_DIR, "ava_asm.paf.gz"),
+    threads: THREADS_MM2
+    resources:
+        mem=MEM_MM2,
+    params:
+        preset="asm5",
+        added_params="-K 8G",
+    log:
+        join(LOG_DIR, "ava_asm.log"),
+    benchmark:
+        join(BENCHMARK_DIR, "ava_asm.tsv")
+    shell:
+        """
+        {{ minimap2 \
+        -x {params.preset} \
+        -t {threads} \
+        {params.added_params} \
+        --eqx --cs -c \
+        {input.asm} \
+        {input.asm} | bgzip ;}} > {output.paf} 2> {log}
+        """
+
+
+checkpoint query_regions:
+    input:
+        paf=rules.ava_asm.output.paf,
+        asm=rules.merge_asm.output,
+    output:
+        fa_dir=directory(join(OUTPUT_DIR, "regions", "{region}")),
+    log:
+        join(LOG_DIR, "query_regions_{region}.log"),
+    benchmark:
+        join(BENCHMARK_DIR, "query_regions_{region}.tsv")
+    params:
+        region="{region}",
+    shell:
+        """
+        {{ impg query \
+        -p {input.paf} \
+        -r {params.region} \
+        -o fasta \
+        --sequence-files {input.asm} | 
+        seqkit split -i - --by-id-prefix "" -O {output.fa_dir} ;}} 2> {log}
+        """
+
+
+rule run_minigraph:
+    input:
+        fa_dir=rules.query_regions.output,
+    output:
+        # rGFA
+        # vg convert -g -f -W {rgfa}
+        join(OUTPUT_DIR, "graphs", "{region}.gfa")
+    params:
+        min_mapq=1, 
+        min_variant_length=1, 
+        min_alignment_length=10,
+        min_alignment_length_depth=10,
+    log:
+        join(LOG_DIR, "generate_variation_graph_{region}.log"),
+    benchmark:
+        join(BENCHMARK_DIR, "generate_variation_graph_{region}.tsv")
+    threads: THREADS_MG
+    resources:
+        mem=MEM_MG,
+    shell:
+        """
+        minigraph \
+        -cx ggs \
+        -t{threads} \
+        {input.fa_dir}/*.fasta \
+        -q {params.min_mapq} \
+        -L {params.min_variant_length} \
+        -l {params.min_alignment_length} \
+        -d {params.min_alignment_length_depth} > {output} 2> {log}
+        """
+
+
+def variant_graphs(wc) -> list[str]:
+    output_dir = checkpoints.query_regions.get(**wc).output[0]
+    files = glob.glob(join(output_dir, "*.fasta"))
+
+    if len(files) < 2:
+        return []
+    
+    return expand(rules.run_minigraph.output, region=wc.region)
+
+
+rule generate_variation_graphs:
+    input:
+        variant_graphs
+    output:
+        touch(join(OUTPUT_DIR, "checkpoints", "graph_{region}.done"))
+
+# TODO: Convert to og.
+# TODO: rule inject_bed_into_graph
+
+
+rule all:
+    input:
+        expand(rules.generate_variation_graphs.output, region=all_regions),
+    default_target: True
