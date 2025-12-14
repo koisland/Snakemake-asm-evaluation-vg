@@ -5,6 +5,7 @@ from os.path import join
 
 ASSEMBLIES = config["assemblies"]
 REGIONS = config["regions"]
+ANNOTATIONS = config["annotations"]
 OUTPUT_DIR = config["output_dir"]
 LOG_DIR = config["log_dir"]
 BENCHMARK_DIR = config["benchmark_dir"]
@@ -25,6 +26,11 @@ elif isinstance(REGIONS, str):
     all_regions = [REGIONS]
 elif isinstance(REGIONS, list):
     all_regions = REGIONS
+
+
+
+wildcard_constraints:
+    region="|".join(all_regions)
 
 
 rule merge_asm:
@@ -97,9 +103,8 @@ rule run_minigraph:
     input:
         fa_dir=rules.query_regions.output,
     output:
-        # rGFA
-        # vg convert -g -f -W {rgfa}
-        join(OUTPUT_DIR, "graphs", "{region}.gfa")
+        rgfa=join(OUTPUT_DIR, "graphs", "{region}.rgfa"),
+        gfa=join(OUTPUT_DIR, "graphs", "{region}.gfa"),
     params:
         min_mapq=1, 
         min_variant_length=1, 
@@ -117,13 +122,70 @@ rule run_minigraph:
         minigraph \
         -cx ggs \
         -t{threads} \
-        {input.fa_dir}/*.fasta \
+        {input.fa_dir}/*.fasta \ # TODO: Make sure reference always the region.
         -q {params.min_mapq} \
         -L {params.min_variant_length} \
         -l {params.min_alignment_length} \
-        -d {params.min_alignment_length_depth} > {output} 2> {log}
+        -d {params.min_alignment_length_depth} > {output.rgfa} 2> {log}
+        # Convert to GFAv1.1
+        vg convert -g -f -W {output.rgfa} > {output.gfa} 2>> {log}
         """
 
+
+rule convert_gfa_to_og:
+    input:
+        gfa=rules.run_minigraph.output.gfa
+    output:
+        og=join(OUTPUT_DIR, "graphs", "{region}.og"),
+    shell:
+        """
+        odgi build -g {input.gfa} -o {output.og}
+        """
+
+
+rule merge_format_annotations:
+    input:
+        ANNOTATIONS
+    output:
+        bed=join(OUTPUT_DIR, "bed", "merged_annotations.bed"),
+    shell:
+        """
+        zcat -f {input} | cut -f 1-4 | sort -k1,1 -k2,2n > {output.bed}
+        """
+
+rule inject_annot_and_cvt_to_gfa:
+    input:
+        og=rules.convert_gfa_to_og.output.og,
+        annotations=rules.merge_format_annotations.output,
+    output:
+        bed_inj=join(OUTPUT_DIR, "bed", "{region}_injected.bed"),
+        og_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.og"),
+        gfa_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.gfa"),
+    shell:
+        """
+        # Convert region wildcard to BED file in relative coordinate system.
+        # * First convert to path system, strip the coordinates, intersect with bed, and then add them back and revert back to path system.
+        # * Add increment so all path names are unique.
+        # * odgi procbed's path name parsing didn't work for me.
+        bedtools intersect \
+            -a {input.annotations} \
+            -b <(odgi paths -Ll -i {input.og} | awk -v OFS="\\t" '{{ match($1, "^(.+):(.+)-", arr); print arr[1], $2+arr[2], $3+arr[2], arr[2]}}') \
+            -wa -wb | \
+        awk -v OFS="\\t" '{{
+            path_st=$(NF-2);
+            path_end=$(NF-1);
+            path_len=path_end-path_st; 
+            chrom_st=$(NF);
+            new_st=$2-chrom_st;
+            new_st=(new_st > 0) ? new_st + 1 : 0;
+            new_end=$3-chrom_st;
+            new_end=(new_end > path_len) ? path_len : new_end;
+            path_name=$1":"path_st-1"-"path_end
+            print path_name, new_st, new_end + 1, $4"_"NR
+        }}' > {output.bed_inj}
+        odgi inject -i {input.og} -b {output.bed_inj} -o {output.og_inj}
+        odgi view -i {output.og_inj} --to-gfa > {output.gfa_inj}
+        """
 
 def variant_graphs(wc) -> list[str]:
     output_dir = checkpoints.query_regions.get(**wc).output[0]
@@ -132,7 +194,10 @@ def variant_graphs(wc) -> list[str]:
     if len(files) < 2:
         return []
     
-    return expand(rules.run_minigraph.output, region=wc.region)
+    return [
+        *expand(rules.run_minigraph.output, region=wc.region),
+        *expand(rules.inject_annot_and_cvt_to_gfa.output, region=wc.region),
+    ]
 
 
 rule generate_variation_graphs:

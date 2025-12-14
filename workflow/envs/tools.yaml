@@ -8,3 +8,4 @@ dependencies:
   - minigraph
   - odgi
   - impg
+  - bedtools
