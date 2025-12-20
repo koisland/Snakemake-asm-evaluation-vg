@@ -9,3 +9,4 @@ dependencies:
   - odgi
   - impg
   - bedtools
+  - vg

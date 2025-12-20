@@ -125,12 +125,13 @@ rule run_minigraph:
         mem=MEM_MG,
     conda:
         "envs/tools.yaml"
+    # TODO: Make sure reference always the region.
     shell:
         """
         minigraph \
         -cx ggs \
         -t{threads} \
-        {input.fa_dir}/*.fasta \ # TODO: Make sure reference always the region.
+        {input.fa_dir}/*.fasta \
         -q {params.min_mapq} \
         -L {params.min_variant_length} \
         -l {params.min_alignment_length} \
