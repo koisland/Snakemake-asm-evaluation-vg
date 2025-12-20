@@ -40,6 +40,8 @@ rule merge_asm:
         fa=join(OUTPUT_DIR, "merged_asm.fa.gz"),
     benchmark:
         join(BENCHMARK_DIR, "merge_asm.tsv")
+    conda:
+        "envs/tools.yaml"
     log:
         join(LOG_DIR, "merge_asm.log"),
     shell:
@@ -60,6 +62,8 @@ rule ava_asm:
     params:
         preset="asm5",
         added_params="-K 8G",
+    conda:
+        "envs/tools.yaml"
     log:
         join(LOG_DIR, "ava_asm.log"),
     benchmark:
@@ -88,6 +92,8 @@ checkpoint query_regions:
         join(BENCHMARK_DIR, "query_regions_{region}.tsv")
     params:
         region="{region}",
+    conda:
+        "envs/tools.yaml"
     shell:
         """
         {{ impg query \
@@ -117,6 +123,8 @@ rule run_minigraph:
     threads: THREADS_MG
     resources:
         mem=MEM_MG,
+    conda:
+        "envs/tools.yaml"
     shell:
         """
         minigraph \
@@ -137,6 +145,8 @@ rule convert_gfa_to_og:
         gfa=rules.run_minigraph.output.gfa
     output:
         og=join(OUTPUT_DIR, "graphs", "{region}.og"),
+    conda:
+        "envs/tools.yaml"
     shell:
         """
         odgi build -g {input.gfa} -o {output.og}
@@ -148,6 +158,8 @@ rule merge_format_annotations:
         ANNOTATIONS
     output:
         bed=join(OUTPUT_DIR, "bed", "merged_annotations.bed"),
+    conda:
+        "envs/tools.yaml"
     shell:
         """
         zcat -f {input} | cut -f 1-4 | sort -k1,1 -k2,2n > {output.bed}
@@ -161,6 +173,8 @@ rule inject_annot_and_cvt_to_gfa:
         bed_inj=join(OUTPUT_DIR, "bed", "{region}_injected.bed"),
         og_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.og"),
         gfa_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.gfa"),
+    conda:
+        "envs/tools.yaml"
     shell:
         """
         # Convert region wildcard to BED file in relative coordinate system.
@@ -187,6 +201,8 @@ rule inject_annot_and_cvt_to_gfa:
         odgi view -i {output.og_inj} --to-gfa > {output.gfa_inj}
         """
 
+# TODO: Call variants and overlap with regions.
+
 def variant_graphs(wc) -> list[str]:
     output_dir = checkpoints.query_regions.get(**wc).output[0]
     files = glob.glob(join(output_dir, "*.fasta"))
@@ -205,9 +221,6 @@ rule generate_variation_graphs:
         variant_graphs
     output:
         touch(join(OUTPUT_DIR, "checkpoints", "graph_{region}.done"))
-
-# TODO: Convert to og.
-# TODO: rule inject_bed_into_graph
 
 
 rule all:
