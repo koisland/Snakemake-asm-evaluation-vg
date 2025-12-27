@@ -2,9 +2,6 @@ assemblies:
 - /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/hifiasm/CHM13_hifiasm/assembly.fasta
 - /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/verkko/CHM13_verkko/assembly.fasta
 regions: /project/logsdon_shared/projects/Keith/NucFlagPaper/exp/pggb/regions/regions_slop_5kbp.bed
-annotations:
-- /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/nucflag/CHM13_verkko_hifi_misassemblies.bed
-- /project/logsdon_shared/projects/Keith/NucFlagPaper/results/assembly/nucflag/CHM13_hifiasm_hifi_misassemblies.bed
 output_dir: "results"
 log_dir: "logs"
 benchmark_dir: "benchmarks"

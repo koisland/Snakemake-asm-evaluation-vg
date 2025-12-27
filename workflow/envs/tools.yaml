@@ -6,7 +6,8 @@ dependencies:
   - seqkit
   - minimap2
   - minigraph
-  - odgi
+  # - odgi
   - impg
   - bedtools
-  - vg
+  # - vg
+  - python
