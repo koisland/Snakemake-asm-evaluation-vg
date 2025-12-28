@@ -70,7 +70,7 @@ checkpoint split_regions:
     output:
         fofn=join(OUTPUT_DIR, "regions", "region_beds.fofn")
     params:
-        outdir=join(OUTPUT_DIR, "bed")
+        outdir=join(OUTPUT_DIR, "regions", "bed")
     shell:
         """
         mkdir -p {params.outdir}
@@ -88,7 +88,7 @@ rule query_regions:
         asm=rules.merge_asm.output,
         bed=join(rules.split_regions.params.outdir, "{region}.bed")
     output:
-        fa_dir=directory(join(OUTPUT_DIR, "regions", "{region}")),
+        fa_dir=directory(join(OUTPUT_DIR, "regions", "fasta", "{region}")),
     log:
         join(LOG_DIR, "query_regions_{region}.log"),
     benchmark:
@@ -147,6 +147,31 @@ rule run_minigraph:
         -d {params.min_alignment_length_depth} > {output.rgfa} 2> {log}
         # Convert to GFAv1.1 where segments are renamed to SN tag.
         python {params.script} {output.rgfa} > {output.gfa} 2>> {log}
+        """
+
+
+# https://github.com/lh3/minigraph?tab=readme-ov-file#calling-structural-variations
+rule call_bubbles:
+    input:
+        gfa=rules.run_minigraph.output.gfa
+    output:
+        bed_raw=join(OUTPUT_DIR, "bed", "{region}_bubbles_raw.bed"),
+        bed=join(OUTPUT_DIR, "bed", "{region}_bubbles.bed"),
+    log:
+        join(LOG_DIR, "call_bubbles_{region}.log"),
+    conda:
+        "envs/tools.yaml"
+    shell:
+        """
+        {{ gfatools bubble {input.gfa} | \
+        tee {output.bed_raw} | \
+        awk -v OFs="\\t" '{{
+            match($1, "^(.*?):([0-9]+)-([0-9]+)$", mtches);
+            $1=mtches[1];
+            $2=$2+mtches[2];
+            $3=$2+mtches[3];
+            print
+        }}' ;}} > {output.bed} 2> {log}
         """
 
 
@@ -219,7 +244,6 @@ rule run_minigraph:
 #         odgi view -i {output.og_inj} --to-gfa > {output.gfa_inj}
 #         """
 
-# TODO: Call variants and overlap with regions.
 
 def variant_graphs(wc):
     fofn = checkpoints.split_regions.get(**wc).output.fofn
@@ -234,10 +258,11 @@ def variant_graphs(wc):
 
     outputs = []
     outputs.extend(expand(rules.run_minigraph.output, region=regions))
-    # outputs.extend(expand(rules.inject_annot_and_cvt_to_gfa.output, region=regions))
+    outputs.extend(expand(rules.call_bubbles.output, region=regions))
     return outputs
-     
-rule generate_variation_graphs:
+
+
+rule generate_variation_graph_output:
     input:
         rules.split_regions.output,
         variant_graphs,
@@ -247,5 +272,5 @@ rule generate_variation_graphs:
 
 rule all:
     input:
-        rules.generate_variation_graphs.output,
+        rules.generate_variation_graph_output.output,
     default_target: True
