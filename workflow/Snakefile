@@ -247,7 +247,7 @@ rule call_bubbles:
 #         """
 
 
-def variant_graphs(wc):
+def graph_outputs(wc):
     fofn = checkpoints.split_regions.get(**wc).output.fofn
     regions = []
     with open(fofn, "rt") as fh:
@@ -257,19 +257,22 @@ def variant_graphs(wc):
                 for line in bfh:
                     chrom, st, end = line.strip().split("\t")
                     regions.append(f"{chrom}:{st}-{end}")
-
-    outputs = []
-    outputs.extend(expand(rules.run_minigraph.output, region=regions))
-    outputs.extend(expand(rules.call_bubbles.output, region=regions))
-    return outputs
+    return {
+        "gfa": expand(rules.run_minigraph.output.gfa, region=regions),
+        "bubbles": expand(rules.call_bubbles.output.bed, region=regions),
+    }
 
 
 rule generate_variation_graph_output:
     input:
-        rules.split_regions.output,
-        variant_graphs,
+        unpack(graph_outputs),
+        region_fofn=rules.split_regions.output,
     output:
-        touch(join(OUTPUT_DIR, "checkpoints", "all_graphs.done"))
+        bubbles=join(OUTPUT_DIR, "bed", "all_bubbles.bed")
+    shell:
+        """
+        sort -k1,1 -k2,2n {input.bubbles} > {output.bubbles}
+        """
 
 
 rule all:
