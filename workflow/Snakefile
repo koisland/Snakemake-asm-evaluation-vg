@@ -165,7 +165,7 @@ rule call_bubbles:
         """
         {{ gfatools bubble {input.gfa} | \
         tee {output.bed_raw} | \
-        awk -v OFs="\\t" '{{
+        awk -v OFS="\\t" '{{
             match($1, "^(.*?):([0-9]+)-([0-9]+)$", mtches);
             $1=mtches[1];
             start=$2+mtches[2];
