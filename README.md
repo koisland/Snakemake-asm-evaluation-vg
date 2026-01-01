@@ -6,6 +6,7 @@ Assessing assemblies with variation graphs.
 
 ## Workflow
 1. Perform AvA alignment of assemblies with [`minimap2`](https://github.com/lh3/minimap2).
+    * Each assembly and its sequences should have a shared prefix delimited by an underscore. (ex. `CHM13_*`) 
 2. Query each region in provided bedfile with [`impg`](https://github.com/pangenome/impg).
 3. Generate variation graph of queried regions with [`minigraph`](https://github.com/lh3/minigraph).
 4. Rename segments in rGFA to SN tag.

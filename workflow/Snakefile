@@ -5,7 +5,7 @@ from os.path import join
 
 ASSEMBLIES = config["assemblies"]
 REGIONS = config["regions"]
-# ANNOTATIONS = config["annotations"]
+ANNOTATIONS = config.get("annotations", [])
 OUTPUT_DIR = config["output_dir"]
 LOG_DIR = config["log_dir"]
 BENCHMARK_DIR = config["benchmark_dir"]
@@ -15,8 +15,10 @@ MEM_MM2 = config["mem_mm2"]
 THREADS_MG = config["threads_mg"]
 MEM_MG = config["mem_mg"]
 
+
 wildcard_constraints:
-    region=r"(.+):([0-9]+)-([0-9]+)"
+    region=r"(.+):([0-9]+)-([0-9]+)",
+
 
 rule merge_asm:
     input:
@@ -64,13 +66,14 @@ rule ava_asm:
         {input.asm} | bgzip ;}} > {output.paf} 2> {log}
         """
 
+
 checkpoint split_regions:
     input:
-        regions=REGIONS
+        regions=REGIONS,
     output:
-        fofn=join(OUTPUT_DIR, "regions", "region_beds.fofn")
+        fofn=join(OUTPUT_DIR, "regions", "region_beds.fofn"),
     params:
-        outdir=join(OUTPUT_DIR, "regions", "bed")
+        outdir=join(OUTPUT_DIR, "regions", "bed"),
     shell:
         """
         mkdir -p {params.outdir}
@@ -82,11 +85,12 @@ checkpoint split_regions:
         }}' {input.regions}
         """
 
+
 rule query_regions:
     input:
         paf=rules.ava_asm.output.paf,
         asm=rules.merge_asm.output,
-        bed=join(rules.split_regions.params.outdir, "{region}.bed")
+        bed=join(rules.split_regions.params.outdir, "{region}.bed"),
     output:
         fa_dir=directory(join(OUTPUT_DIR, "regions", "fasta", "{region}")),
     log:
@@ -111,10 +115,10 @@ rule run_minigraph:
         fa_dir=rules.query_regions.output,
     output:
         rgfa=join(OUTPUT_DIR, "graphs", "{region}.rgfa"),
-        gfa=join(OUTPUT_DIR, "graphs", "{region}.gfa"),
+        gfa=join(OUTPUT_DIR, "graphs", "{region}_segment_named.gfa"),
     params:
-        min_mapq=1, 
-        min_variant_length=1, 
+        min_mapq=1,
+        min_variant_length=1,
         min_alignment_length=10,
         min_alignment_length_depth=10,
         region_seqkit=lambda wc: wc.region.replace(":", "__"),
@@ -153,7 +157,7 @@ rule run_minigraph:
 # https://github.com/lh3/minigraph?tab=readme-ov-file#calling-structural-variations
 rule call_bubbles:
     input:
-        gfa=rules.run_minigraph.output.gfa
+        gfa=rules.run_minigraph.output.gfa,
     output:
         bed_raw=join(OUTPUT_DIR, "bed", "{region}_bubbles_raw.bed"),
         bed=join(OUTPUT_DIR, "bed", "{region}_bubbles.bed"),
@@ -177,74 +181,91 @@ rule call_bubbles:
         """
 
 
-# rule convert_gfa_to_og:
-#     input:
-#         gfa=rules.run_minigraph.output.gfa
-#     output:
-#         og=join(OUTPUT_DIR, "graphs", "{region}.og"),
-#     conda:
-#         "envs/tools.yaml"
-#     shell:
-#         """
-#         if [ -s {input.gfa} ]; then
-#             odgi build -g {input.gfa} -o {output.og}
-#         else
-#             touch {output}
-#         fi
-#         """
+rule convert_rgfa_to_gbz:
+    input:
+        rgfa=rules.run_minigraph.output.rgfa,
+    output:
+        gfa=join(OUTPUT_DIR, "graphs", "{region}.gfa"),
+        gbz=join(OUTPUT_DIR, "graphs", "{region}.gbz"),
+    log:
+        join(LOG_DIR, "convert_rgfa_to_gbz_{region}.log"),
+    params:
+        rgfa_prefix=lambda wc: wc.region.split("_")[0]
+    conda:
+        "envs/tools.yaml"
+    shell:
+        """
+        vg convert -f --rgfa-prefix "{params.rgfa_prefix}" --rgfa-pline {input.rgfa} > {output.gfa} 2> {log}
+        vg gbwt -G {output.gfa} --gbz-format -g {output.gbz} 2>> {log}
+        """
 
 
-# rule merge_format_annotations:
-#     input:
-#         ANNOTATIONS
-#     output:
-#         bed=join(OUTPUT_DIR, "bed", "merged_annotations.bed"),
-#     conda:
-#         "envs/tools.yaml"
-#     shell:
-#         """
-#         zcat -f {input} | cut -f 1-4 | sort -k1,1 -k2,2n > {output.bed}
-#         """
+rule merge_format_annotations:
+    input:
+        ANNOTATIONS,
+    output:
+        bed=join(OUTPUT_DIR, "bed", "merged_annotations.bed"),
+    conda:
+        "envs/tools.yaml"
+    shell:
+        """
+        zcat -f {input} | cut -f 1-4 | sort -k1,1 -k2,2n > {output.bed}
+        """
 
-# rule inject_annot_and_cvt_to_gfa:
-#     input:
-#         og=rules.convert_gfa_to_og.output.og,
-#         annotations=rules.merge_format_annotations.output,
-#     output:
-#         bed_inj=join(OUTPUT_DIR, "bed", "{region}_injected.bed"),
-#         og_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.og"),
-#         gfa_inj=join(OUTPUT_DIR, "graphs", "{region}_injected.gfa"),
-#     conda:
-#         "envs/tools.yaml"
-#     shell:
-#         """
-#         if [ ! -s {input.og} ]; then
-#             touch {output}
-#             exit 0
-#         fi
-#         # Convert region wildcard to BED file in relative coordinate system.
-#         # * First convert to path system, strip the coordinates, intersect with bed, and then add them back and revert back to path system.
-#         # * Add increment so all path names are unique.
-#         # * odgi procbed's path name parsing didn't work for me.
-#         bedtools intersect \
-#             -a {input.annotations} \
-#             -b <(odgi paths -Ll -i {input.og} | awk -v OFS="\\t" '{{ match($1, "^(.+):(.+)-", arr); print arr[1], $2+arr[2], $3+arr[2], arr[2]}}') \
-#             -wa -wb | \
-#         awk -v OFS="\\t" '{{
-#             path_st=$(NF-2);
-#             path_end=$(NF-1);
-#             path_len=path_end-path_st; 
-#             chrom_st=$(NF);
-#             new_st=$2-chrom_st;
-#             new_st=(new_st > 0) ? new_st + 1 : 0;
-#             new_end=$3-chrom_st;
-#             new_end=(new_end > path_len) ? path_len : new_end;
-#             path_name=$1":"path_st-1"-"path_end
-#             print path_name, new_st, new_end + 1, $4"_"NR
-#         }}' > {output.bed_inj}
-#         odgi inject -i {input.og} -b {output.bed_inj} -o {output.og_inj}
-#         odgi view -i {output.og_inj} --to-gfa > {output.gfa_inj}
-#         """
+
+rule convert_annot_to_path_coords:
+    input:
+        bed=rules.merge_format_annotations.output,
+    output:
+        bed=join(OUTPUT_DIR, "bed", "{region}_annot.bed"),
+    conda:
+        "envs/tools.yaml"
+    shell:
+        """
+        # Convert region wildcard to BED file in relative coordinate system.
+        # * First convert to path system, strip the coordinates, intersect with bed, and then add them back and revert back to path system.
+        # * Add increment so all path names are unique.
+        bedtools intersect \
+            -a {input.bed} \
+            -b <(
+                echo "{wildcards.region}" | \
+                awk -v OFS="\\t" '{{
+                    match($1, "^(.*?):([0-9]+)-([0-9]+)$", mtch);
+                    print mtch[1], mtch[2], mtch[3]
+            }}') \
+            -wa -wb | \
+        awk -v OFS="\\t" '{{
+            chrom_st=$(NF-1);
+            chrom_end=$(NF);
+            path_st=0;
+            path_len=chrom_end-chrom_st; 
+            path_end=path_len;
+            new_st=$2-chrom_st;
+            new_st=(new_st > 0) ? new_st + 1 : 0;
+            new_end=$3-chrom_st;
+            new_end=(new_end > path_len) ? path_len : new_end;
+            path_name=$1":"path_st"-"path_end
+            print path_name, new_st, new_end + 1, $4"_"NR
+        }}' > {output.bed}
+        """
+
+
+rule annotate_graph:
+    input:
+        gbz=rules.convert_rgfa_to_gbz.output.gbz,
+        bed=rules.convert_annot_to_path_coords.output.bed,
+    output:
+        gaf=join(OUTPUT_DIR, "graphs", "{region}.gaf.gz"),
+        tbi=join(OUTPUT_DIR, "graphs", "{region}.gaf.gz.tbi"),
+    conda:
+        "envs/tools.yaml"
+    shell:
+        """
+        vg annotate -x {input.gbz} \
+        -b {input.bed} \
+        -F | bgzip > {output.gaf}
+        tabix -p gaf {output.gaf}
+        """
 
 
 def graph_outputs(wc):
@@ -257,10 +278,14 @@ def graph_outputs(wc):
                 for line in bfh:
                     chrom, st, end = line.strip().split("\t")
                     regions.append(f"{chrom}:{st}-{end}")
-    return {
+    outputs = {
         "gfa": expand(rules.run_minigraph.output.gfa, region=regions),
         "bubbles": expand(rules.call_bubbles.output.bed, region=regions),
     }
+    if ANNOTATIONS:
+        outputs["gaf"] = expand(rules.annotate_graph.output, region=regions)
+
+    return outputs
 
 
 rule generate_variation_graph_output:
@@ -268,7 +293,7 @@ rule generate_variation_graph_output:
         unpack(graph_outputs),
         region_fofn=rules.split_regions.output,
     output:
-        bubbles=join(OUTPUT_DIR, "bed", "all_bubbles.bed")
+        bubbles=join(OUTPUT_DIR, "bed", "all_bubbles.bed"),
     shell:
         """
         sort -k1,1 -k2,2n {input.bubbles} > {output.bubbles}

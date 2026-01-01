@@ -2,6 +2,7 @@ assemblies:
 - test/input/CHM13_hifiasm_0.25.0_ptg000001l__1596338-1607488.fasta.gz
 - test/input/CHM13_verkko_2.2.1_contig-0000085__158960433-158971584.fasta.gz
 - test/input/CHM13_verkko_2.3_contig-0000524__158959968-158971117.fasta.gz
+annotations: test/input/misassemblies.bed
 regions: test/input/regions.bed
 output_dir: "results"
 log_dir: "logs"
