@@ -269,9 +269,11 @@ rule generate_variation_graph_output:
         region_fofn=rules.split_regions.output,
     output:
         bubbles=join(OUTPUT_DIR, "bed", "all_bubbles.bed")
+    params:
+        bubbles=lambda wc, input: input.bubbles if hasattr(input, "bubbles") else ""
     shell:
         """
-        sort -k1,1 -k2,2n {input.bubbles} > {output.bubbles}
+        sort -k1,1 -k2,2n {params.bubbles} > {output.bubbles}
         """
 
 
