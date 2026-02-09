@@ -5,7 +5,7 @@ Assessing assemblies with variation graphs.
 ![](docs/chm13_simple_repeat.png)
 
 ## Workflow
-1. Perform AvA alignment of assemblies with [`minimap2`](https://github.com/lh3/minimap2).
+1. Perform AvA alignment of assemblies with [`wfmash`](https://github.com/waveygang/wfmash).
 2. Query each region in provided bedfile with [`impg`](https://github.com/pangenome/impg).
 3. Generate variation graph of queried regions with [`minigraph`](https://github.com/lh3/minigraph).
 4. Rename segments in rGFA to SN tag.

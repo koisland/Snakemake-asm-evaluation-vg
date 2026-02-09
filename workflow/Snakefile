@@ -10,8 +10,8 @@ OUTPUT_DIR = config["output_dir"]
 LOG_DIR = config["log_dir"]
 BENCHMARK_DIR = config["benchmark_dir"]
 
-THREADS_MM2 = config["threads_mm2"]
-MEM_MM2 = config["mem_mm2"]
+THREADS_WFM = config["threads_wfm"]
+MEM_WFM = config["mem_wfm"]
 THREADS_MG = config["threads_mg"]
 MEM_MG = config["mem_mg"]
 
@@ -36,19 +36,16 @@ rule merge_asm:
         """
 
 
-# See https://lh3.github.io/minimap2/minimap2.html
-# -DP important (Related to https://github.com/lh3/minimap2/issues/228)
 rule ava_asm:
     input:
         asm=rules.merge_asm.output,
     output:
         paf=join(OUTPUT_DIR, "ava_asm.paf.gz"),
-    threads: THREADS_MM2
+    threads: THREADS_WFM
     resources:
-        mem=MEM_MM2,
+        mem=MEM_WFM,
     params:
-        preset="asm5",
-        added_params="-K 8G",
+        ident="95",
     conda:
         "envs/tools.yaml"
     log:
@@ -57,13 +54,9 @@ rule ava_asm:
         join(BENCHMARK_DIR, "ava_asm.tsv")
     shell:
         """
-        {{ minimap2 \
-        -x {params.preset} \
+        {{ wfmash \
+        -p {params.ident} \
         -t {threads} \
-        {params.added_params} \
-        --eqx --cs -c \
-        -DP \
-        {input.asm} \
         {input.asm} | bgzip ;}} > {output.paf} 2> {log}
         """
 

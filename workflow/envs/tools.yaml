@@ -4,11 +4,9 @@ channels:
 dependencies:
   - samtools
   - seqkit
-  - minimap2
+  - wfmash==0.24.2
   - minigraph
-  # - odgi
   - impg
   - bedtools
-  # - vg
   - python
   - gfatools
