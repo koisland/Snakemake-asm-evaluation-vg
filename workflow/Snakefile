@@ -129,7 +129,7 @@ rule run_minigraph:
         ref_fasta=$(find {input.fa_dir} -name "*.fasta" -and -name "{params.region_seqkit}.fasta")
         qry_fasta=$(find {input.fa_dir} -name "*.fasta" -and -not -name "{params.region_seqkit}.fasta")
         n_qry=$(echo "${{qry_fasta}}" | sed 's| |\\n|g' | wc -l)
-        if [ -z "${{qry_fasta}}" ] || [ -z "${{ref_fasta}}" || [ "${{n_qry}}" -ne 1 ] ]; then
+        if [ -z "${{qry_fasta}}" ] || [ -z "${{ref_fasta}}" || [ "${{n_qry}}" -ne 1 ]; then
             touch {output}
             exit 0
         fi
